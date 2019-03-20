@@ -12,5 +12,13 @@
     "ttab": "^0.6.1"
   },
   "devDependencies": {},
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lxgreen/get-rce.git"
+  },
+  "bugs": {
+    "url": "https://github.com/lxgreen/get-rce/issues"
+  },
+  "homepage": "https://github.com/lxgreen/get-rce#readme",
   "description": ""
 }

@@ -15,23 +15,23 @@ REGISTRY=`npm config get registry`
 npm config set registry http://npm.dev.wixpress.com
 
 # params parsed
-while getopts "t:b:" opt; do
+while getopts "p:b:" opt; do
   case ${opt} in
-    t )
-       TARGET_PATH=$OPTARG
-       ;;
+    p )
+      TARGET_PATH=$OPTARG
+      ;;
     b )
-        BRANCH=$OPTARG
-       ;;
+      BRANCH=$OPTARG
+      ;;
     [?] )
         NAME=`basename "$0"`
-        echo "Usage: $NAME [-t target] [-b branch]"
+        echo "Usage: $NAME [-p path] [-b branch]"
         exit 0
         ;;
    esac
 done
 
-echo -en "The 'rich-content' environment based on branch '$BRANCH' will be built at '$TARGET_PATH'"
+echo "The 'rich-content' environment based on branch '$BRANCH' will be built at '$TARGET_PATH'"
 while true; do
   echo "Shall we proceed? [y/n]"
   read RESPONSE
@@ -42,17 +42,17 @@ while true; do
     if [ -d $TARGET_PATH/.git ]
     then
       echo "${red}Error: $TARGET_PATH is a Git repo.${default}"
-      exit 0
+      exit 1
     else
       # test branch existence
       git ls-remote --heads git@github.com:wix-incubator/rich-content.git $BRANCH | grep $BRANCH >/dev/null 2>&1
       if [ "$?" == "1" ]
       then
         echo "${red}Error: '$BRANCH' branch does not exist on remote${default}"
-        exit 0
+        exit 1
       fi
       # clone and checkout
-      git clone git@github.com:wix-incubator/rich-content.git && cd $TARGET_PATH/rich-content && git checkout $BRANCH
+      git clone git@github.com:wix-incubator/rich-content.git $TARGET_PATH/rich-content && cd $TARGET_PATH/rich-content && git checkout $BRANCH
       if [ "$?" == "0" ]
       then
         echo "${green}Success: the 'rich-content' repo is cloned. Proceed to build? [y/n]${default}"
@@ -67,9 +67,11 @@ while true; do
             read SHOULD_RUN
             if [ "$SHOULD_RUN" = 'y' -o "$SHOULD_RUN" = 'Y' ]
             then
+              # remove existing links
+              rm ~/.config/yarn/link/wix-rich-content-*
               # build and run both editor and viewer
-              npx ttab 'cd ./examples/editor && yarn && yarn start'
-              npx ttab 'cd ./examples/viewer && yarn && yarn start'
+              npx ttab 'cd ./examples/editor >/dev/null 2>&1 && yarn && yarn start'
+              npx ttab 'cd ./examples/viewer>/dev/null 2>&1 && yarn && yarn start'
             else
               echo 'bye!'
               exit 0
