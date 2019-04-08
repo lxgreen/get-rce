@@ -1,7 +1,7 @@
 {
   "name": "get-rce",
-  "version": "1.0.0",
-  "main": "index.js",
+  "version": "0.0.2",
+  "main": "get-rce",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
@@ -9,6 +9,11 @@
   "author": "lxgreen",
   "license": "ISC",
   "dependencies": {
+    "chalk": "^2.4.2",
+    "child_process": "^1.0.2",
+    "commander": "^2.20.0",
+    "path": "^0.12.7",
+    "prompts": "^2.0.4",
     "ttab": "^0.6.1"
   },
   "devDependencies": {},
@@ -20,5 +25,5 @@
     "url": "https://github.com/lxgreen/get-rce/issues"
   },
   "homepage": "https://github.com/lxgreen/get-rce#readme",
-  "description": ""
+  "description": "clones, builds and runs RCE"
 }
