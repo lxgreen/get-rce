@@ -1,11 +1,13 @@
 {
   "name": "get-rce",
   "version": "0.0.2",
-  "main": "get-rce",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "postinstall": "chmod +x ./bin/get-rce"
   },
-  "keywords": [],
+  "bin": {
+    "get-rce": "bin/get-rce"
+  },
+  "keywords": ["rce", "wix-rich-content-editor", "mac", "iterm"],
   "author": "lxgreen",
   "license": "ISC",
   "dependencies": {
@@ -16,6 +18,10 @@
     "prompts": "^2.0.4",
     "ttab": "^0.6.1"
   },
+  "engines": {
+    "node": ">=10"
+  },
+  "preferGlobal": true,
   "devDependencies": {},
   "repository": {
     "type": "git",
@@ -25,5 +31,5 @@
     "url": "https://github.com/lxgreen/get-rce/issues"
   },
   "homepage": "https://github.com/lxgreen/get-rce#readme",
-  "description": "clones, builds and runs RCE"
+  "description": "clones, builds and runs RCE on Mac"
 }

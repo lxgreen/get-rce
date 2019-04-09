@@ -8,7 +8,7 @@ const chalk = require('chalk');
 const prompts = require('prompts');
 const execSync = require('child_process').execSync;
 const program = require('commander');
-const pkg = require('./package.json');
+const pkg = require('../package.json');
 
 const WIX_REGISTRY = 'http://npm.dev.wixpress.com';
 const RCE_REPO = 'rich-content';
