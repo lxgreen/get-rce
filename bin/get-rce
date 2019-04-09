@@ -35,7 +35,7 @@ function getRce(options) {
 
   const DEFAULTS = {
     BRANCH: 'develop',
-    TARGET: __dirname,
+    TARGET: $HOME,
     REGISTRY: preserveRegistry()
   };
 
