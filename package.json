@@ -1,13 +1,18 @@
 {
   "name": "get-rce",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "scripts": {
     "postinstall": "chmod +x ./bin/get-rce"
   },
   "bin": {
     "get-rce": "bin/get-rce"
   },
-  "keywords": ["rce", "wix-rich-content-editor", "mac", "iterm"],
+  "keywords": [
+    "rce",
+    "wix-rich-content-editor",
+    "mac",
+    "iterm"
+  ],
   "author": "lxgreen",
   "license": "ISC",
   "dependencies": {
