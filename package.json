@@ -20,8 +20,7 @@
     "child_process": "^1.0.2",
     "commander": "^2.20.0",
     "path": "^0.12.7",
-    "prompts": "^2.0.4",
-    "ttab": "^0.6.1"
+    "prompts": "^2.0.4"
   },
   "engines": {
     "node": ">=10"

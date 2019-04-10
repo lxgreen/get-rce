@@ -3,10 +3,9 @@
 
 const path = require('path');
 const fs = require('fs');
-const cp = require('child_process');
 const chalk = require('chalk');
 const prompts = require('prompts');
-const execSync = require('child_process').execSync;
+const { execSync, spawn } = require('child_process');
 const program = require('commander');
 const pkg = require('../package.json');
 
@@ -82,13 +81,22 @@ function getRce(options) {
               process.chdir(path.resolve(target, RCE_PLUGINS_WIX_REPO, 'packages', 'plugin-gallery'));
               execCommand('yarn link');
               process.chdir(path.resolve(target, RCE_REPO));
-              execCommand(`npx ttab 'cd ./examples/editor && yarn && yarn link wix-rich-content-plugin-gallery && yarn start'`);
-              execCommand(`npx ttab 'cd ./examples/viewer && yarn && yarn link wix-rich-content-plugin-gallery && yarn start'`);
+              console.log(chalk.cyan(`Building the editor example`));
+              execCommand(`cd ./examples/editor && yarn && yarn link wix-rich-content-plugin-gallery`, { stdio: 'inherit' });
+              console.log(chalk.cyan(`Building the viewer example`));
+              execCommand(`cd ./examples/viewer && yarn && yarn link wix-rich-content-plugin-gallery`, { stdio: 'inherit' });
+
+              process.chdir(path.resolve(target, RCE_REPO, 'examples', 'editor'));
+              const editorProc = spawn(`yarn start`, { shell: true });
+              process.chdir(path.resolve(target, RCE_REPO, 'examples', 'viewer'));
+              const viewerProc = spawn(`yarn start`, { shell: true });
 
               confirmNextStep(
                 `The examples are running...`,
-                `Restore original yarn links and npm registry?`,
+                `Shall we kill them?`,
                 () => {
+                  editorProc.kill();
+                  viewerProc.kill();
                   setRegistry(DEFAULTS.REGISTRY);
                   restoreYarnlinks();
               });
