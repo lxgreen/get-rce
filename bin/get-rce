@@ -14,12 +14,12 @@ const RCE_REPO = 'rich-content';
 const RCE_PLUGINS_WIX_REPO = 'rich-content-plugins-wix';
 
 program
-  .version(pkg.version)
-  .description(pkg.description)
-  .option('-b, --branch [branchName]', 'branch to checkout')
-  .option('-p, --path [dirName]', 'path used for "git clone"')
-  .option('-d, --debug', 'activate debug logging')
-  .action(getRce);
+.version(pkg.version)
+.description(pkg.description)
+.option('-b, --branch [branchName]', 'branch to checkout')
+.option('-p, --path [dirName]', 'path used for "git clone"')
+.option('-d, --debug', 'activate debug logging')
+.action(getRce);
 
 program.parse(process.argv);
 
@@ -61,124 +61,136 @@ function getRce(options) {
       execCommand(`git checkout ${branch}`);
 
       confirmNextStep(
-        `The 'rich-content' source code retrieved successfully`,
-        `Proceed to build?`,
+        `The source code retrieved successfully`,
+        `Proceed to 'rich-content' build?`,
         () => {
-          console.log(chalk.cyan(`Building '${RCE_PLUGINS_WIX_REPO}'...`));
-          process.chdir(path.resolve(target, RCE_PLUGINS_WIX_REPO));
-          setRegistry(WIX_REGISTRY);
-          exitOnError(() => execCommand('npm install && npm run build', { stdio: 'inherit' }) == null, `${RCE_PLUGINS_WIX_REPO} build failed`);
-
           console.log(chalk.cyan(`Building '${RCE_REPO}'...`));
           process.chdir(path.resolve(target, RCE_REPO));
           exitOnError(() => execCommand('npm install && npm run build', { stdio: 'inherit' }) == null, `${RCE_REPO} build failed`);
 
           confirmNextStep(
             `The 'rich-content' build complete`,
-            `Proceed to examples?`,
+            `Proceed to 'rich-content-plugin-wix' build? (NOTE: WIX VPN REQUIRED - CONNECT NOW!)`,
             () => {
-              yarnUnlink();
-              process.chdir(path.resolve(target, RCE_PLUGINS_WIX_REPO, 'packages', 'plugin-gallery'));
-              execCommand('yarn link');
-              process.chdir(path.resolve(target, RCE_REPO));
-              console.log(chalk.cyan(`Building the editor example`));
-              execCommand(`cd ./examples/editor && yarn && yarn link wix-rich-content-plugin-gallery`, { stdio: 'inherit' });
-              console.log(chalk.cyan(`Building the viewer example`));
-              execCommand(`cd ./examples/viewer && yarn && yarn link wix-rich-content-plugin-gallery`, { stdio: 'inherit' });
-
-              process.chdir(path.resolve(target, RCE_REPO, 'examples', 'editor'));
-              const editorProc = spawn(`yarn start`, { shell: true });
-              process.chdir(path.resolve(target, RCE_REPO, 'examples', 'viewer'));
-              const viewerProc = spawn(`yarn start`, { shell: true });
-
-              confirmNextStep(
-                `The examples are running...`,
-                `Shall we kill them?`,
-                () => {
-                  editorProc.kill();
-                  viewerProc.kill();
-                  setRegistry(DEFAULTS.REGISTRY);
-                  restoreYarnlinks();
-              });
+              console.log(chalk.cyan(`Building '${RCE_PLUGINS_WIX_REPO}'...`));
+              process.chdir(path.resolve(target, RCE_PLUGINS_WIX_REPO));
+              setRegistry(WIX_REGISTRY);
+              exitOnError(() => execCommand('npm install && npm run build', { stdio: 'inherit' }) == null, `${RCE_PLUGINS_WIX_REPO} build failed`);
+              runExamples(target, DEFAULTS, true);
+            },
+            () => {
+              runExamples(target, DEFAULTS, false);
             });
+          });
         });
-    });
-}
+      }
 
-function exitOnError(predicate, errorMessage, errorCode = 1) {
-  if (!predicate()) {
-    console.error(chalk.red(`Error: ${errorMessage}`));
-    console.log();
-    process.exit(errorCode);
-  }
-}
+      function runExamples(target, DEFAULTS, privateCodeAvailable) {
+        confirmNextStep(`The packages are built successfully`,
+        `Proceed to examples?`,
+        () => {
+          yarnUnlink();
+          let linkGalleryCommand = '';
+          if (privateCodeAvailable) {
+            process.chdir(path.resolve(target, RCE_PLUGINS_WIX_REPO, 'packages', 'plugin-gallery'));
+            execCommand('yarn link');
+            linkGalleryCommand = '&& yarn link wix-rich-content-plugin-gallery';
+          }
+          process.chdir(path.resolve(target, RCE_REPO));
+          console.log(chalk.cyan(`Building the editor example`));
+          execCommand(`cd ./examples/editor && yarn ${linkGalleryCommand}`, { stdio: 'inherit' });
+          console.log(chalk.cyan(`Building the viewer example`));
+          execCommand(`cd ./examples/viewer && yarn ${linkGalleryCommand}`, { stdio: 'inherit' });
+          process.chdir(path.resolve(target, RCE_REPO, 'examples', 'editor'));
+          const editorProc = spawn(`yarn start`, { shell: true });
+          process.chdir(path.resolve(target, RCE_REPO, 'examples', 'viewer'));
+          const viewerProc = spawn(`yarn start`, { shell: true });
+          confirmNextStep(`The examples are running...`, `Shall we kill them?`, () => {
+            editorProc.kill();
+            viewerProc.kill();
+            setRegistry(DEFAULTS.REGISTRY);
+            restoreYarnlinks();
+          });
+        });
+      }
 
-function execCommand(command, options = {}) {
-  if(execCommand.debug) {
-    console.log();
-    console.log(chalk.grey(`debug: before '${command}' command`));
-  }
-  const returnValue = execSync(command, options);
-  if(execCommand.debug) {
-    console.log(chalk.grey(`debug: '${command}' returned '${returnValue}'`));
-    console.log();
-  }
+      function exitOnError(predicate, errorMessage, errorCode = 1) {
+        if (!predicate()) {
+          console.error(chalk.red(`Error: ${errorMessage}`));
+          console.log();
+          process.exit(errorCode);
+        }
+      }
 
-  return returnValue;
-}
+      function execCommand(command, options = {}) {
+        if(execCommand.debug) {
+          console.log();
+          console.log(chalk.grey(`debug: before '${command}' command`));
+        }
+        const returnValue = execSync(command, options);
+        if(execCommand.debug) {
+          console.log(chalk.grey(`debug: '${command}' returned '${returnValue}'`));
+          console.log();
+        }
 
-function testBranchOnRemote(branch) {
-  try{
-    return execCommand(`git ls-remote --heads git@github.com:wix-incubator/rich-content.git ${branch} | grep ${branch}`);
-  } catch(e) {
-    return '1';
-  }
-}
+        return returnValue;
+      }
 
-function cloneRepo(repo, target) {
-  try{
-    return execCommand(`git clone git@github.com:wix-incubator/${repo}.git ${target}/${repo}`, { stdio: 'inherit' });
-  } catch(e) {
-    return '1';
-  }
-}
+      function testBranchOnRemote(branch) {
+        try{
+          return execCommand(`git ls-remote --heads git@github.com:wix-incubator/rich-content.git ${branch} | grep ${branch}`);
+        } catch(e) {
+          return '1';
+        }
+      }
 
-function preserveRegistry() {
-  return execCommand('npm config get registry');
-}
+      function cloneRepo(repo, target) {
+        try{
+          return execCommand(`git clone git@github.com:wix-incubator/${repo}.git ${target}/${repo}`, { stdio: 'inherit' });
+        } catch(e) {
+          return '1';
+        }
+      }
 
-function setRegistry(registry) {
-  return execCommand(`npm config set registry ${registry}`);
-}
+      function preserveRegistry() {
+        return execCommand('npm config get registry');
+      }
 
-function yarnUnlink() {
-  execCommand('mv ~/.config/yarn/link ~/.config/yarn/link_original');
-  execCommand('mkdir -p ~/.config/yarn/link');
-}
+      function setRegistry(registry) {
+        return execCommand(`npm config set registry ${registry}`);
+      }
 
-function restoreYarnlinks() {
-  execCommand('rm -rf ~/.config/yarn/link');
-  execCommand('mv ~/.config/yarn/link_original ~/.config/yarn/link');
-}
+      function yarnUnlink() {
+        execCommand('mkdir -p ~/.config/yarn/link');
+        execCommand('mv ~/.config/yarn/link ~/.config/yarn/link_original');
+        execCommand('mkdir -p ~/.config/yarn/link');
+      }
 
-function resetConsole() {
-  process.stdout.write('\x1Bc');
-}
+      function restoreYarnlinks() {
+        execCommand('rm -rf ~/.config/yarn/link');
+        execCommand('mv ~/.config/yarn/link_original ~/.config/yarn/link');
+      }
 
-function confirmNextStep(status, question, step) {
-  resetConsole();
-  console.log(chalk.cyan(status));
-  console.log();
+      function resetConsole() {
+        process.stdout.write('\x1Bc');
+      }
 
-  prompts({ type: 'confirm', name: 'value', initial: false, message: question })
-  .then(({ value }) => {
-    if (!value) {
-      console.log();
-      console.log(chalk.green('Bye!'));
-      console.log();
-      process.exit(1);
-    } else {
-      step();
-    }
-  });
-}
+      function confirmNextStep(status, question, step, skipStep = () => {
+        console.log();
+        console.log(chalk.green('Bye!'));
+        console.log();
+        process.exit(1);
+      }) {
+        resetConsole();
+        console.log(chalk.cyan(status));
+        console.log();
+
+        prompts({ type: 'confirm', name: 'value', initial: false, message: question })
+        .then(({ value }) => {
+          if (!value) {
+            skipStep();
+          } else {
+            step();
+          }
+        });
+      }
