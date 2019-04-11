@@ -1,6 +1,6 @@
-# get-rce for mac
+# get-rce
 
-a cli for fast [RCE](https://github.com/wix-incubator/rich-content) local environment set up on mac
+a cli for fast [RCE](https://github.com/wix-incubator/rich-content) local environment set up
 
 ## installation
 
