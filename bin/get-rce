@@ -49,6 +49,7 @@ function getRce(options) {
       exitOnError(() => !fs.existsSync(path.resolve(target, '.git')), `'${target}' is a Git repo. Try another path.`);
       exitOnError(() => testBranchOnRemote(branch) != '1', `'${branch}' branch does not exist on remote. Try another branch.`);
 
+      resetConsole();
       console.log(chalk.cyan(`Getting the source code`));
       console.log();
       console.log(chalk.cyan(`Cloning '${RCE_PLUGINS_WIX_REPO}'...`));
@@ -138,7 +139,7 @@ function getRce(options) {
 
       function testBranchOnRemote(branch) {
         try{
-          return execCommand(`git ls-remote --heads git@github.com:wix-incubator/rich-content.git ${branch} | grep ${branch}`);
+          return execCommand(`git ls-remote --heads https://github.com/wix-incubator/rich-content.git ${branch} | grep ${branch}`);
         } catch(e) {
           return '1';
         }
@@ -146,7 +147,7 @@ function getRce(options) {
 
       function cloneRepo(repo, target) {
         try{
-          return execCommand(`git clone git@github.com:wix-incubator/${repo}.git ${target}/${repo}`, { stdio: 'inherit' });
+          return execCommand(`git clone https://github.com/wix-incubator/${repo}.git ${target}/${repo}`, { stdio: 'inherit' });
         } catch(e) {
           return '1';
         }
