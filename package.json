@@ -1,14 +1,12 @@
 {
   "name": "get-rce",
-  "version": "0.1.3",
+  "version": "0.2.0",
   "bin": {
     "get-rce": "bin/get-rce"
   },
   "keywords": [
     "rce",
-    "wix-rich-content-editor",
-    "mac",
-    "iterm"
+    "wix-rich-content-editor"
   ],
   "author": "lxgreen",
   "license": "ISC",

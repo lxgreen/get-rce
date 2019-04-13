@@ -1,42 +1,117 @@
 #!/usr/bin/env node
-'use strict';
+"use strict";
 
-const path = require('path');
-const fs = require('fs');
-const chalk = require('chalk');
-const prompts = require('prompts');
-const { execSync, spawn } = require('child_process');
-const program = require('commander');
-const pkg = require('../package.json');
+const path = require("path");
+const fs = require("fs");
+const chalk = require("chalk");
+const prompts = require("prompts");
+const { execSync, spawn } = require("child_process");
+const program = require("commander");
+const pkg = require("../package.json");
 
-const WIX_REGISTRY = 'http://npm.dev.wixpress.com';
-const RCE_REPO = 'rich-content';
-const RCE_PLUGINS_WIX_REPO = 'rich-content-plugins-wix';
+const WIX_REGISTRY = "http://npm.dev.wixpress.com";
+const RCE_REPO = "rich-content";
+const RCE_PLUGINS_WIX_REPO = "rich-content-plugins-wix";
+
+const DEFAULTS = {
+  BRANCH: "develop",
+  TARGET: process.env["HOME"],
+  REGISTRY: execSync("npm config get registry").toString()
+};
+
+const context = {};
+
+const STEPS = {
+  INIT: "INIT",
+  ADD_SSH_KEY: "ADD_SSH_KEY",
+  CLONE_RCE: "CLONE_RCE",
+  CLONE_RCE_PLUGINS: "CLONE_RCE_PLUGINS",
+  BUILD_RCE: "BUILD_RCE",
+  BUILD_RCE_PLUGINS: "BUILD_RCE_PLUGINS",
+  BUILD_EDITOR_EXAMPLE: "BUILD_EDITOR_EXAMPLE",
+  BUILD_VIEWER_EXAMPLE: "BUILD_VIEWER_EXAMPLE",
+  RUN_EXAMPLES: "RUN_EXAMPLES",
+  YARN_UNLINK: "YARN_UNLINK",
+  SET_WIX_REGISTRY: "SET_WIX_REGISTRY"
+};
+
+const stepsPerformed = [STEPS.INIT];
+
+const CLEANUP_STEPS = {
+  REMOVE_SSH_KEY: () =>
+    execCommand(
+      `rm ${path.resolve(
+        process.env["HOME"],
+        ".ssh",
+        path.basename(context.commandOptions.key)
+      )}`
+    ),
+  RESTORE_REGISTRY: () => setRegistry(DEFAULTS.REGISTRY),
+  RESTORE_LINKS: restoreYarnlinks
+};
+
+const cleanupByStep = {
+  [STEPS.INIT]: [],
+  [STEPS.ADD_SSH_KEY]: [CLEANUP_STEPS.REMOVE_SSH_KEY],
+  [STEPS.CLONE_RCE]: [],
+  [STEPS.CLONE_RCE_PLUGINS]: [],
+  [STEPS.BUILD_RCE]: [],
+  [STEPS.BUILD_RCE_PLUGINS]: [],
+  [STEPS.BUILD_EDITOR_EXAMPLE]: [],
+  [STEPS.BUILD_VIEWER_EXAMPLE]: [],
+  [STEPS.YARN_UNLINK]: [CLEANUP_STEPS.RESTORE_LINKS],
+  [STEPS.RUN_EXAMPLES]: [],
+  [STEPS.SET_WIX_REGISTRY]: [CLEANUP_STEPS.RESTORE_REGISTRY]
+};
+
+function setStep(nextStep) {
+  stepsPerformed.push(nextStep);
+  if (context.commandOptions.debug) {
+    console.log(`debug: `, { nextStep, stepsPerformed });
+  }
+}
 
 program
-.version(pkg.version)
-.description(pkg.description)
-.option('-b, --branch [branchName]', 'branch to checkout')
-.option('-p, --path [dirName]', 'path used for "git clone"')
-.option('-d, --debug', 'activate debug logging')
-.action(getRce);
+  .version(pkg.version)
+  .description(pkg.description)
+  .option("-b, --branch [branchName]", "branch to checkout (default: develop)")
+  .option("-d, --debug", "activate debug logging")
+  .option(
+    "-k, --key [keyPath]",
+    "SSH private key path (required for rich-content-plugins-wix)"
+  )
+  .option("-p, --path [dirName]", 'path used for "git clone" (default: $HOME)')
+  .option("-s, --silent", `don't ask me anything, just do it`)
+  .action(getRce);
 
 program.parse(process.argv);
 
+function cleanup() {
+  if (context.commandOptions.debug) {
+    console.log(chalk.grey("debug: cleanup started"));
+  }
+  stepsPerformed.forEach(step =>
+    cleanupByStep[step].forEach(cleanupStep => cleanupStep())
+  );
+}
 
 function getRce(options) {
+  context.commandOptions = options;
 
-  process.on('unhandledRejection', error => {
+  process.on("unhandledRejection", error => {
     throw error;
   });
 
-  execCommand.debug = options.debug;
+  process.on("exit", cleanup);
 
-  const DEFAULTS = {
-    BRANCH: 'develop',
-    TARGET: process.env['HOME'],
-    REGISTRY: preserveRegistry()
-  };
+  process.on("SIGINT", function() {
+    console.log(chalk.yellow("Termination: cancelled by user"));
+    process.exit(0);
+  });
+
+  if (options.key) {
+    processSshKey(options.key);
+  }
 
   const branch = options.branch || DEFAULTS.BRANCH;
   const target = options.path || DEFAULTS.TARGET;
@@ -45,153 +120,284 @@ function getRce(options) {
     `The 'rich-content' environment based on branch '${branch}' will be built at '${target}'`,
     `Shall we proceed?`,
     () => {
-      execCommand(`mkdir -p ${target}`);
-      exitOnError(() => !fs.existsSync(path.resolve(target, '.git')), `'${target}' is a Git repo. Try another path.`);
-      exitOnError(() => testBranchOnRemote(branch) != '1', `'${branch}' branch does not exist on remote. Try another branch.`);
-
-      resetConsole();
-      console.log(chalk.cyan(`Getting the source code`));
-      console.log();
-      console.log(chalk.cyan(`Cloning '${RCE_PLUGINS_WIX_REPO}'...`));
-      exitOnError(() => cloneRepo(RCE_PLUGINS_WIX_REPO, target) != '1', `failed to clone '${RCE_PLUGINS_WIX_REPO}'.`);
-      console.log();
-
-      console.log(chalk.cyan(`Cloning '${RCE_REPO}'...`));
-      exitOnError(() => cloneRepo(RCE_REPO, target) != '1', `failed to clone '${RCE_REPO}'.`);
-      process.chdir(path.resolve(target, RCE_REPO));
-      execCommand(`git checkout ${branch}`);
-
+      getSourceCode(target, branch);
       confirmNextStep(
         `The source code retrieved successfully`,
         `Proceed to 'rich-content' build?`,
         () => {
-          console.log(chalk.cyan(`Building '${RCE_REPO}'...`));
-          process.chdir(path.resolve(target, RCE_REPO));
-          exitOnError(() => execCommand('npm install && npm run build', { stdio: 'inherit' }) == null, `${RCE_REPO} build failed`);
-
-          confirmNextStep(
-            `The 'rich-content' build complete`,
-            `Proceed to 'rich-content-plugin-wix' build? (NOTE: WIX VPN REQUIRED - CONNECT NOW!)`,
-            () => {
-              console.log(chalk.cyan(`Building '${RCE_PLUGINS_WIX_REPO}'...`));
-              process.chdir(path.resolve(target, RCE_PLUGINS_WIX_REPO));
-              setRegistry(WIX_REGISTRY);
-              exitOnError(() => execCommand('npm install && npm run build', { stdio: 'inherit' }) == null, `${RCE_PLUGINS_WIX_REPO} build failed`);
-              runExamples(target, DEFAULTS, true);
-            },
-            () => {
-              runExamples(target, DEFAULTS, false);
-            });
-          });
-        });
-      }
-
-      function runExamples(target, DEFAULTS, privateCodeAvailable) {
-        confirmNextStep(`The packages are built successfully`,
-        `Proceed to examples?`,
-        () => {
-          yarnUnlink();
-          let linkGalleryCommand = '';
-          if (privateCodeAvailable) {
-            process.chdir(path.resolve(target, RCE_PLUGINS_WIX_REPO, 'packages', 'plugin-gallery'));
-            execCommand('yarn link');
-            linkGalleryCommand = '&& yarn link wix-rich-content-plugin-gallery';
-          }
-          process.chdir(path.resolve(target, RCE_REPO));
-          console.log(chalk.cyan(`Building the editor example`));
-          execCommand(`cd ./examples/editor && yarn ${linkGalleryCommand}`, { stdio: 'inherit' });
-          console.log(chalk.cyan(`Building the viewer example`));
-          execCommand(`cd ./examples/viewer && yarn ${linkGalleryCommand}`, { stdio: 'inherit' });
-          process.chdir(path.resolve(target, RCE_REPO, 'examples', 'editor'));
-          const editorProc = spawn(`yarn start`, { shell: true });
-          process.chdir(path.resolve(target, RCE_REPO, 'examples', 'viewer'));
-          const viewerProc = spawn(`yarn start`, { shell: true });
-          confirmNextStep(`The examples are running...`, `Shall we kill them?`, () => {
-            editorProc.kill();
-            viewerProc.kill();
-            setRegistry(DEFAULTS.REGISTRY);
-            restoreYarnlinks();
-          });
-        });
-      }
-
-      function exitOnError(predicate, errorMessage, errorCode = 1) {
-        if (!predicate()) {
-          console.error(chalk.red(`Error: ${errorMessage}`));
-          console.log();
-          process.exit(errorCode);
-        }
-      }
-
-      function execCommand(command, options = {}) {
-        if(execCommand.debug) {
-          console.log();
-          console.log(chalk.grey(`debug: before '${command}' command`));
-        }
-        const returnValue = execSync(command, options);
-        if(execCommand.debug) {
-          console.log(chalk.grey(`debug: '${command}' returned '${returnValue}'`));
-          console.log();
-        }
-
-        return returnValue;
-      }
-
-      function testBranchOnRemote(branch) {
-        try{
-          return execCommand(`git ls-remote --heads https://github.com/wix-incubator/rich-content.git ${branch} | grep ${branch}`);
-        } catch(e) {
-          return '1';
-        }
-      }
-
-      function cloneRepo(repo, target) {
-        try{
-          return execCommand(`git clone https://github.com/wix-incubator/${repo}.git ${target}/${repo}`, { stdio: 'inherit' });
-        } catch(e) {
-          return '1';
-        }
-      }
-
-      function preserveRegistry() {
-        return execCommand('npm config get registry');
-      }
-
-      function setRegistry(registry) {
-        return execCommand(`npm config set registry ${registry}`);
-      }
-
-      function yarnUnlink() {
-        execCommand('mkdir -p ~/.config/yarn/link');
-        execCommand('mv ~/.config/yarn/link ~/.config/yarn/link_original');
-        execCommand('mkdir -p ~/.config/yarn/link');
-      }
-
-      function restoreYarnlinks() {
-        execCommand('rm -rf ~/.config/yarn/link');
-        execCommand('mv ~/.config/yarn/link_original ~/.config/yarn/link');
-      }
-
-      function resetConsole() {
-        process.stdout.write('\x1Bc');
-      }
-
-      function confirmNextStep(status, question, step, skipStep = () => {
-        console.log();
-        console.log(chalk.green('Bye!'));
-        console.log();
-        process.exit(1);
-      }) {
-        resetConsole();
-        console.log(chalk.cyan(status));
-        console.log();
-
-        prompts({ type: 'confirm', name: 'value', initial: false, message: question })
-        .then(({ value }) => {
-          if (!value) {
-            skipStep();
+          buildRce(target);
+          if (context.commandOptions.key) {
+            confirmNextStep(
+              `The 'rich-content' build complete`,
+              `Proceed to 'rich-content-plugin-wix' build? (NOTE: WIX VPN REQUIRED - CONNECT NOW!)`,
+              () => {
+                buildRcePluginsWix(target);
+                runExamples(target, true);
+              },
+              () => {
+                runExamples(target, false);
+              }
+            );
           } else {
-            step();
+            runExamples(target, false);
           }
-        });
+        }
+      );
+    }
+  );
+}
+
+function buildRcePluginsWix(target) {
+  console.log(chalk.cyan(`Building '${RCE_PLUGINS_WIX_REPO}'...`));
+  process.chdir(path.resolve(target, RCE_PLUGINS_WIX_REPO));
+
+  setRegistry(WIX_REGISTRY);
+  setStep(STEPS.SET_WIX_REGISTRY);
+  exitOnError(
+    () =>
+      execCommand("npm install && npm run build", { stdio: "inherit" }) == null,
+    `${RCE_PLUGINS_WIX_REPO} build failed`
+  );
+  setStep(STEPS.BUILD_RCE_PLUGINS);
+}
+
+function buildRce(target) {
+  console.log(chalk.cyan(`Building '${RCE_REPO}'...`));
+  process.chdir(path.resolve(target, RCE_REPO));
+
+  exitOnError(
+    () =>
+      execCommand("npm install && npm run build", { stdio: "inherit" }) == null,
+    `${RCE_REPO} build failed`
+  );
+  setStep(STEPS.BUILD_RCE);
+}
+
+function getSourceCode(target, branch) {
+  execCommand(`mkdir -p ${target}`);
+  exitOnError(
+    () => !fs.existsSync(path.resolve(target, ".git")),
+    `'${target}' is a Git repo. Try another path.`
+  );
+  exitOnError(
+    () => testBranchOnRemote(branch) != "1",
+    `'${branch}' branch does not exist on remote. Try another branch.`
+  );
+  resetConsole();
+  console.log(chalk.cyan(`Getting the source code`));
+  console.log();
+  if (context.commandOptions.key) {
+    console.log(chalk.cyan(`Cloning '${RCE_PLUGINS_WIX_REPO}'...`));
+    exitOnError(
+      () => cloneRepo(RCE_PLUGINS_WIX_REPO, target) != "1",
+      `failed to clone '${RCE_PLUGINS_WIX_REPO}'.`
+    );
+    console.log();
+    setStep(STEPS.CLONE_RCE_PLUGINS);
+  }
+  console.log(chalk.cyan(`Cloning '${RCE_REPO}'...`));
+  exitOnError(
+    () => cloneRepo(RCE_REPO, target) != "1",
+    `failed to clone '${RCE_REPO}'.`
+  );
+  setStep(STEPS.CLONE_RCE);
+  process.chdir(path.resolve(target, RCE_REPO));
+  execCommand(`git checkout ${branch}`);
+}
+
+function runExamples(target, privateCodeAvailable) {
+  confirmNextStep(
+    `The packages are built successfully`,
+    `Proceed to examples?`,
+    () => {
+      yarnUnlink();
+      let linkGalleryCommand = "";
+      if (privateCodeAvailable) {
+        process.chdir(
+          path.resolve(
+            target,
+            RCE_PLUGINS_WIX_REPO,
+            "packages",
+            "plugin-gallery"
+          )
+        );
+        execCommand("yarn link");
+        linkGalleryCommand = "&& yarn link wix-rich-content-plugin-gallery";
       }
+      process.chdir(path.resolve(target, RCE_REPO));
+      console.log(chalk.cyan(`Building the editor example`));
+      execCommand(`cd ./examples/editor && yarn ${linkGalleryCommand}`, {
+        stdio: "inherit"
+      });
+      setStep(STEPS.BUILD_EDITOR_EXAMPLE);
+      console.log(chalk.cyan(`Building the viewer example`));
+
+      execCommand(`cd ./examples/viewer && yarn ${linkGalleryCommand}`, {
+        stdio: "inherit"
+      });
+      setStep(STEPS.BUILD_VIEWER_EXAMPLE);
+      process.chdir(path.resolve(target, RCE_REPO, "examples", "editor"));
+
+      const editorProc = spawn(`yarn start`, { shell: true });
+      process.chdir(path.resolve(target, RCE_REPO, "examples", "viewer"));
+      const viewerProc = spawn(`yarn start`, { shell: true });
+      setStep(STEPS.RUN_EXAMPLES);
+      confirmNextStep(
+        `The examples are running...`,
+        `Shall we keep them alive?`,
+        () => {
+          process.exit(0);
+        },
+        () => {
+          editorProc.kill();
+          viewerProc.kill();
+          process.exit(0);
+        }
+      );
+    }
+  );
+}
+
+function processSshKey(keyPath) {
+  if (!fs.existsSync(keyPath) || !fs.lstatSync(keyPath).isFile()) {
+    console.log(
+      chalk.red(
+        `Error: SSH key is not found at ${keyPath}. The 'key' parameter is ignored`
+      )
+    );
+    context.commandOptions.key = false;
+    return;
+  }
+
+  // do not overwrite existing keys
+  const localKey = path.resolve(
+    process.env["HOME"],
+    ".ssh",
+    path.basename(keyPath)
+  );
+  if (
+    fs.existsSync(localKey) &&
+    fs.lstatSync(localKey).isFile() &&
+    localKey !== path.resolve(keyPath)
+  ) {
+    console.log(
+      chalk.yellow(
+        `Warning: existing SSH key will be used instead of parameter.`
+      )
+    );
+    return;
+  } else if(localKey === path.resolve(keyPath)) {
+    return;
+  }
+
+
+
+  const copied = execCommand(`cp -n ${keyPath} ~/.ssh/`).toString();
+  if (copied !== "1") {
+    setStep(STEPS.ADD_SSH_KEY);
+  }
+}
+
+function exitOnError(predicate, errorMessage, errorCode = 1) {
+  if (!predicate()) {
+    console.error(chalk.red(`Error: ${errorMessage}`));
+    console.log();
+    process.exit(errorCode);
+  }
+}
+
+function execCommand(command, options = {}) {
+  if (context.commandOptions.debug) {
+    console.log();
+    console.log(chalk.grey(`debug: before '${command}' command`));
+  }
+  const returnValue = execSync(command, options);
+  if (context.commandOptions.debug) {
+    console.log(chalk.grey(`debug: '${command}' returned '${returnValue}'`));
+    console.log();
+  }
+
+  return returnValue;
+}
+
+function testBranchOnRemote(branch) {
+  try {
+    return execCommand(
+      `git ls-remote --heads https://github.com/wix-incubator/rich-content.git ${branch} | grep ${branch}`
+    );
+  } catch (e) {
+    return "1";
+  }
+}
+
+function cloneRepo(repo, target) {
+  try {
+    return execCommand(
+      `git clone https://github.com/wix-incubator/${repo}.git ${target}/${repo}`,
+      { stdio: "inherit" }
+    );
+  } catch (e) {
+    return "1";
+  }
+}
+
+function setRegistry(registry) {
+  return execCommand(`npm config set registry ${registry}`);
+}
+
+function yarnUnlink() {
+  execCommand("mkdir -p ~/.config/yarn/link");
+  if (
+    !fs.existsSync(
+      path.resolve(process.env["HOME"], ".config", "yarn", "link_original")
+    )
+  ) {
+    execCommand("mv ~/.config/yarn/link ~/.config/yarn/link_original");
+    execCommand("mkdir -p ~/.config/yarn/link");
+    setStep(STEPS.YARN_UNLINK);
+  }
+}
+
+function restoreYarnlinks() {
+  execCommand("rm -rf ~/.config/yarn/link");
+  execCommand("mv ~/.config/yarn/link_original ~/.config/yarn/link");
+}
+
+function resetConsole() {
+  process.stdout.write("\x1Bc");
+}
+
+function confirmNextStep(
+  status,
+  question,
+  step,
+  skipStep = () => {
+    console.log();
+    console.log(chalk.green("Bye!"));
+    console.log();
+    process.exit(1);
+  }
+) {
+  if (context.commandOptions.silent) {
+    console.log(chalk.cyan(status));
+    console.log();
+    return step();
+  }
+
+  resetConsole();
+  console.log(chalk.cyan(status));
+  console.log();
+
+  prompts({
+    type: "confirm",
+    name: "value",
+    initial: false,
+    message: question
+  }).then(({ value }) => {
+    if (!value) {
+      skipStep();
+    } else {
+      step();
+    }
+  });
+}
