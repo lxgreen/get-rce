@@ -164,7 +164,7 @@ function buildRce(target) {
 
   exitOnError(
     () =>
-      execCommand("npm install && npm run build --prefix ./packages/common && npm run build", { stdio: "inherit" }) == null,
+      execCommand("npm install && npm run build", { stdio: "inherit" }) == null,
     `${RCE_REPO} build failed`
   );
   setStep(STEPS.BUILD_RCE);
