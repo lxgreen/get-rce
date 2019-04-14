@@ -66,9 +66,6 @@ const cleanupByStep = {
 
 function setStep(nextStep) {
   stepsPerformed.push(nextStep);
-  if (context.commandOptions.debug) {
-    console.log(`debug: `, { nextStep, stepsPerformed });
-  }
 }
 
 program
